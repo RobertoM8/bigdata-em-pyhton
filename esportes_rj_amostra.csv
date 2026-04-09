@@ -1,9 +1,0 @@
-id_centro_esportivo,cidade,bairro,tipo_esporte,capacidade_pessoas,investimento_mensal_reais,status_funcionamento
-1,Rio de Janeiro,Maracanã,Futebol,500,50000.0,Ativo
-2,Niterói,Icaraí,Vôlei de Praia,200,15000.0,Ativo
-3,Rio de Janeiro,Copacabana,Futevôlei,150,12000.0,Ativo
-4,Duque de Caxias,Centro,Atletismo,300,25000.0,Manutenção
-5,Nova Iguaçu,Centro,Natação,250,30000.0,Ativo
-6,Niterói,São Francisco,Vela,100,20000.0,Ativo
-7,São Gonçalo,Centro,Futebol,400,35000.0,Ativo
-8,Rio de Janeiro,Barra da Tijuca,Ginástica Artística,600,80000.0,Ativo

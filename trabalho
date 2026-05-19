@@ -201,6 +201,8 @@ else:
         print("=" * 50)
         print(f"* Crime Analisado: {crime_alvo}")
         print(f"* Média de Crimes por Mês: {df_alvo['Quantidade'].mean():.0f} ocorrências.")
+        print(f"* Mínimo de Crimes em um Mês: {df_alvo['Quantidade'].min():.0f} ocorrências.")
+        print(f"* Máximo de Crimes em um Mês: {df_alvo['Quantidade'].max():.0f} ocorrências.")
         print(f"* Coeficiente Angular da Reta (b): {inclinacao:.2f}")
         if inclinacao > 0:
             print("* Conclusão da Regressão: A tendência matemática indica um AUMENTO das ocorrências ao longo do tempo.")

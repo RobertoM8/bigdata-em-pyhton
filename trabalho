@@ -12,6 +12,7 @@ caminho_excel = os.path.join(pasta_projeto, "2485.xlsx")
 caminho_csv_final = os.path.join(pasta_projeto, "base_criminalidade_estruturada.csv")
 caminho_grafico_freq = os.path.join(pasta_projeto, "distribuicao_frequencia.png")
 caminho_grafico_reg = os.path.join(pasta_projeto, "regressao_linear.png")
+caminho_grafico_out = os.path.join(pasta_projeto, "outliers_analise.png")
 
 # ==============================================================================
 # FASE 1: ENGENHARIA DE DADOS (Extração, Limpeza e Estruturação)
@@ -118,14 +119,12 @@ df['Tipo_Crime'] = df['Tipo_Crime'].str.strip()
 # ==============================================================================
 # MENU 1: ESCOLHA DO CRIME
 # ==============================================================================
-# Pega a lista de todos os crimes únicos e organiza em ordem alfabética
 crimes_disponiveis = sorted(df['Tipo_Crime'].unique().tolist())
 
 print("\nSelecione o Crime que deseja analisar:")
 for i, crime in enumerate(crimes_disponiveis):
     print(f"[{i+1}] {crime}")
 
-# Aguarda o usuário digitar um número
 escolha_crime_idx = int(input("\nDigite o NÚMERO do crime escolhido: ")) - 1
 crime_alvo = crimes_disponiveis[escolha_crime_idx]
 
@@ -138,9 +137,10 @@ print(f"\nVocê selecionou: {crime_alvo}")
 print("Qual análise você deseja gerar?")
 print("[1] Distribuição de Frequência (Histograma Roxo)")
 print("[2] Regressão Linear Simples (Tendência Azul/Vermelha)")
-print("[3] Gerar Ambos os Gráficos")
+print("[3] Detecção de Outliers (Gráfico de Zonas de Dispersão)")
+print("[4] Gerar TODOS os Gráficos Acima")
 
-escolha_calc = input("\nDigite o NÚMERO da análise (1, 2 ou 3): ")
+escolha_calc = input("\nDigite o NÚMERO da análise (1, 2, 3 ou 4): ")
 
 # ==============================================================================
 # PROCESSAMENTO DOS DADOS ESCOLHIDOS
@@ -152,8 +152,8 @@ if df_alvo.empty:
 else:
     print(f"\n-> Iniciando cálculos para: {crime_alvo}...")
 
-    # Se o usuário escolheu 1 ou 3, gera o Histograma
-    if escolha_calc in ['1', '3']:
+    # 1. GERAR HISTOGRAMA
+    if escolha_calc in ['1', '4']:
         print("-> Gerando Histograma de Distribuição de Frequência...")
         plt.figure(figsize=(10, 5))
         sns.histplot(df_alvo['Quantidade'], bins=15, kde=True, color='#8E44AD')
@@ -167,8 +167,8 @@ else:
         plt.close()
         print(f"   [OK] Gráfico de frequência salvo como '{os.path.basename(caminho_grafico_freq)}'")
 
-    # Se o usuário escolheu 2 ou 3, gera a Regressão Linear
-    if escolha_calc in ['2', '3']:
+    # 2. GERAR REGRESSÃO LINEAR
+    if escolha_calc in ['2', '4']:
         print("-> Treinando algoritmo de Regressão Linear Simples...")
         df_ano = df_alvo.groupby('Ano')['Quantidade'].sum().reset_index()
 
@@ -195,19 +195,78 @@ else:
         plt.close()
         print(f"   [OK] Gráfico de regressão salvo como '{os.path.basename(caminho_grafico_reg)}'")
 
-        # Imprime o resumo matemático apenas se a regressão foi solicitada
-        print("\n" + "=" * 50)
-        print("📋 RESULTADOS MATEMÁTICOS PARA O TRABALHO:")
-        print("=" * 50)
-        print(f"* Crime Analisado: {crime_alvo}")
-        print(f"* Média de Crimes por Mês: {df_alvo['Quantidade'].mean():.0f} ocorrências.")
-        print(f"* Mínimo de Crimes em um Mês: {df_alvo['Quantidade'].min():.0f} ocorrências.")
-        print(f"* Máximo de Crimes em um Mês: {df_alvo['Quantidade'].max():.0f} ocorrências.")
+    # 3. GERAR OUTLIERS
+    if escolha_calc in ['3', '4']:
+        print("-> Identificando Outliers (Anomalias Matemáticas)...")
+        media = df_alvo['Quantidade'].mean()
+        dp = df_alvo['Quantidade'].std()
+        
+        # Define os limites mais sensíveis (Média +- 1.5 Desvios Padrões)
+        limite_sup = media + (1.5 * dp)
+        limite_inf = media - (1.5 * dp)
+        
+        # Filtra quem está fora dos limites
+        outliers = df_alvo[(df_alvo['Quantidade'] > limite_sup) | (df_alvo['Quantidade'] < limite_inf)].copy()
+        
+        plt.figure(figsize=(12, 6))
+        
+        # Plota dados normais
+        normais = df_alvo[~df_alvo.index.isin(outliers.index)]
+        plt.scatter(range(len(normais)), normais['Quantidade'], color='#95A5A6', label='Meses Normais', alpha=0.6)
+        
+        # Plota outliers
+        indices_outliers = [df_alvo.index.get_loc(idx) for idx in outliers.index]
+        plt.scatter(indices_outliers, outliers['Quantidade'], color='#E74C3C', label='Outliers (Discrepantes)', s=100, zorder=5)
+
+        # Plota as linhas de limite e média
+        plt.axhline(media, color='#27AE60', linestyle='-', linewidth=2, label='Média Histórica')
+        plt.axhline(limite_sup, color='#C0392B', linestyle='--', label='Limite Superior (Teto)')
+        plt.axhline(limite_inf, color='#C0392B', linestyle='--', label='Limite Inferior (Piso)')
+
+        plt.title(f'Detecção de Outliers Mensais - {crime_alvo}')
+        plt.xlabel('Sequência de Meses Analisados')
+        plt.ylabel('Quantidade de Ocorrências')
+        plt.xticks([]) # Oculta os números do eixo X para não poluir
+        plt.legend(loc='upper right')
+        plt.grid(True, linestyle=':', alpha=0.5)
+
+        plt.savefig(caminho_grafico_out, bbox_inches='tight')
+        plt.close()
+        print(f"   [OK] Gráfico de outliers salvo como '{os.path.basename(caminho_grafico_out)}'")
+
+    # ==============================================================================
+    # EXIBIÇÃO DE RESULTADOS TEXTUAIS
+    # ==============================================================================
+    print("\n" + "=" * 50)
+    print("📋 RESULTADOS MATEMÁTICOS PARA O TRABALHO:")
+    print("=" * 50)
+    print(f"* Crime Analisado: {crime_alvo}")
+    print(f"* Média de Crimes por Mês: {df_alvo['Quantidade'].mean():.0f} ocorrências.")
+    print(f"* Mínimo de Crimes em um Mês: {df_alvo['Quantidade'].min():.0f} ocorrências.")
+    print(f"* Máximo de Crimes em um Mês: {df_alvo['Quantidade'].max():.0f} ocorrências.")
+    print(f"* Desvio Padrão: {df_alvo['Quantidade'].std():.2f} ocorrências.")
+    
+    if escolha_calc in ['2', '4']:
         print(f"* Coeficiente Angular da Reta (b): {inclinacao:.2f}")
         if inclinacao > 0:
-            print("* Conclusão da Regressão: A tendência matemática indica um AUMENTO das ocorrências ao longo do tempo.")
+            print("* Conclusão da Regressão: A tendência indica um AUMENTO das ocorrências no tempo.")
         else:
-            print("* Conclusão da Regressão: A tendência matemática indica uma QUEDA das ocorrências ao longo do tempo.")
-        print("=" * 50)
+            print("* Conclusão da Regressão: A tendência indica uma QUEDA das ocorrências no tempo.")
+            
+    if escolha_calc in ['3', '4']:
+        print("-" * 50)
+        print("🚨 RELATÓRIO DE OUTLIERS (Regra de 1.5 DP)")
+        print(f"  - Limite de Normalidade: entre {limite_inf:.0f} e {limite_sup:.0f} casos mensais.")
+        print(f"  - Total de Outliers Encontrados: {len(outliers)} meses.")
+        if not outliers.empty:
+            print("  - Exemplos de Outliers (Top 3 Mais Discrepantes):")
+            # Ordena pela maior distância da média
+            outliers['Distancia_Media'] = abs(outliers['Quantidade'] - media)
+            top_3 = outliers.sort_values(by='Distancia_Media', ascending=False).head(3)
+            for _, row in top_3.iterrows():
+                print(f"    -> {row['Mes'].capitalize()}/{row['Ano']}: Registrou {row['Quantidade']:.0f} casos.")
+        else:
+            print("  - Nenhum outlier encontrado! Todos os meses oscilaram dentro do esperado.")
+    print("=" * 50)
 
-    print(f"\n✅ Análise finalizada! Verifique a sua pasta de projeto.")
+    print(f"\n✅ Análise finalizada! Verifique a sua pasta de projeto para ver os gráficos gerados.")

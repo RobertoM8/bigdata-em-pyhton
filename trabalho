@@ -1,18 +1,28 @@
-import pandas as pd
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.linear_model import LinearRegression
+import pandas as pd # Para manipular as tabelas (DataFrames)
+import os # Para lidar com caminhos de arquivos e pastas no computador
+import matplotlib.pyplot as plt # Para criar os gráficos
+import seaborn as sns # Para deixar os gráficos mais bonitos e fáceis de fazer (como o histograma)
+from sklearn.linear_model import LinearRegression # A inteligência artificial/matemática que cria a reta de tendência
+import urllib.request # Biblioteca adicionada para fazer o download do GitHub
 
 # ==============================================================================
-# BLOCO 1: CONFIGURAÇÕES GERAIS DE CAMINHO
+# BLOCO 1: CONFIGURAÇÕES GERAIS DE CAMINHO E DOWNLOAD
 # ==============================================================================
+# Aqui definimos onde o arquivo de origem está e onde os arquivos novos serão salvos.
 pasta_projeto = "/content"
-caminho_excel = os.path.join(pasta_projeto, "2485.xlsx")
-caminho_csv_final = os.path.join(pasta_projeto, "base_criminalidade_estruturada.csv")
+caminho_excel = os.path.join(pasta_projeto, "2485.xlsx") # Planilha original suja
+caminho_csv_final = os.path.join(pasta_projeto, "base_criminalidade_estruturada.csv") # Base limpa e estruturada
 caminho_grafico_freq = os.path.join(pasta_projeto, "distribuicao_frequencia.png")
 caminho_grafico_reg = os.path.join(pasta_projeto, "regressao_linear.png")
 caminho_grafico_out = os.path.join(pasta_projeto, "outliers_analise.png")
+
+# --- DOWNLOAD DIRETO DO GITHUB ---
+print("Baixando base de dados do GitHub...")
+url_github = "https://raw.githubusercontent.com/RobertoM8/bigdata-em-pyhton/7b08d38c96f4402f92baeb18c2a968a55a01108a/2485.xlsx"
+
+# Faz o download do arquivo do Github e salva no caminho configurado (/content/2485.xlsx)
+urllib.request.urlretrieve(url_github, caminho_excel)
+print("Download concluído com sucesso!\n")
 
 # ==============================================================================
 # FASE 1: ENGENHARIA DE DADOS (Extração, Limpeza e Estruturação)
@@ -21,9 +31,11 @@ print("-" * 50)
 print("FASE 1: PROCESSAMENTO DE BIG DATA (ETL)")
 print("-" * 50)
 
+# Se o arquivo CSV final já existir de testes anteriores, apagamos para criar um novo do zero.
 if os.path.exists(caminho_csv_final):
     os.remove(caminho_csv_final)
 
+# FUNÇÃO DE LIMPEZA: Padroniza o texto dos meses (ex: "01-Jan" vira "jan")
 def formatar_mes(valor):
     valor = str(valor).strip().lower()
     if '-' in valor:
@@ -35,6 +47,7 @@ def formatar_mes(valor):
         return valor.split('/')[0]
     return valor
 
+# FUNÇÃO DE LIMPEZA: Padroniza o texto dos anos (ex: "Jan-20" vira "2020")
 def formatar_ano(valor):
     valor = str(valor).strip().lower()
     if '-' in valor:
@@ -43,25 +56,31 @@ def formatar_ano(valor):
         return '20' + valor.split('/')[1]
     return valor
 
+# Lê as "abas" do arquivo Excel original
 xls = pd.ExcelFile(caminho_excel)
 total_linhas_geral = 0
 
+# LOOP DAS ABAS: Vai passar por cada página da planilha do Excel
 for aba in xls.sheet_names:
     print(f"-> Limpando aba: {aba}...")
 
+    # Lê a aba atual de forma bruta, sem considerar cabeçalhos ainda (header=None)
     df_bruto = pd.read_excel(caminho_excel, sheet_name=aba, header=None, dtype=str)
 
+    # Identifica em quais linhas começam as subtabelas procurando pela palavra "INCIDÊNCIAS E VÍTIMAS"
     col_A = df_bruto[0].astype(str).str.upper()
     indices_tabelas = df_bruto[col_A.str.contains('INCIDÊNCIAS E VÍTIMAS', na=False) &
                                ~col_A.str.contains('TABELA', na=False)].index.tolist()
 
-    lista_blocos = []
+    lista_blocos = [] # Caixa vazia para guardar as tabelas limpas desta aba
 
+    # LOOP DOS BLOCOS: Separa a aba gigante em várias subtabelas menores
     for i in range(len(indices_tabelas)):
         inicio = indices_tabelas[i]
         fim = indices_tabelas[i+1] if i+1 < len(indices_tabelas) else len(df_bruto)
-        bloco = df_bruto.iloc[inicio:fim].copy()
+        bloco = df_bruto.iloc[inicio:fim].copy() # Recorta o bloco
 
+        # Busca qual é a linha de cabeçalho do bloco atual (procurando palavras chave)
         idx_cabecalho = None
         for r in range(len(bloco)):
             linha_texto = " ".join([str(item).lower() for item in bloco.iloc[r]])
@@ -69,8 +88,9 @@ for aba in xls.sheet_names:
                 idx_cabecalho = r
                 break
 
-        if idx_cabecalho is None: continue
+        if idx_cabecalho is None: continue # Se não achar o cabeçalho, pula o bloco
 
+        # Limpa os nomes das colunas e joga fora as que não importam (como as colunas de "diferença")
         titulos = [str(t).strip() for t in bloco.iloc[idx_cabecalho]]
         titulos[0] = 'Tipo_Crime'
 
@@ -79,24 +99,33 @@ for aba in xls.sheet_names:
         bloco.columns = titulos
         bloco_filtrado = bloco.iloc[idx_cabecalho + 1:][colunas_alvo].copy()
 
+        # Remove as sujeiras das linhas (linhas vazias ou cabeçalhos duplicados no meio dos dados)
         bloco_filtrado = bloco_filtrado.dropna(subset=['Tipo_Crime'])
         bloco_filtrado['Tipo_Crime'] = bloco_filtrado['Tipo_Crime'].astype(str).str.strip()
         bloco_filtrado = bloco_filtrado[~bloco_filtrado['Tipo_Crime'].str.upper().isin(['INCIDÊNCIAS', 'VÍTIMAS', 'NAN', ''])]
 
+        # O GRANDE TRUQUE: Transforma as várias colunas de meses em apenas duas colunas: "Mes_Ano" e "Quantidade"
         bloco_melt = pd.melt(bloco_filtrado, id_vars=['Tipo_Crime'], var_name='Mes_Ano', value_name='Quantidade')
-        lista_blocos.append(bloco_melt)
+        lista_blocos.append(bloco_melt) # Guarda a tabela limpa na lista
 
+    # Se conseguiu extrair blocos limpos, junta todos e aplica os retoques finais
     if lista_blocos:
-        df_aba = pd.concat(lista_blocos, ignore_index=True)
+        df_aba = pd.concat(lista_blocos, ignore_index=True) # Une todos os blocos em um só DataFrame
         df_aba['Mes_Ano'] = df_aba['Mes_Ano'].str.replace(r'\.\d+$', '', regex=True)
+        
+        # Aplica aquelas funções que criamos lá em cima para limpar Meses e Anos
         df_aba['Mes'] = df_aba['Mes_Ano'].apply(formatar_mes)
         df_aba['Ano'] = df_aba['Mes_Ano'].apply(formatar_ano)
         df_aba['Regiao'] = 'Total MRJ' if aba == 'T 2485' else aba
+        
+        # Reorganiza a ordem das colunas para ficar bonitinho e legível
         df_aba = df_aba[['Regiao', 'Tipo_Crime', 'Mes', 'Ano', 'Quantidade']]
 
+        # Mantém apenas as linhas que realmente têm números válidos na Quantidade e remove duplicatas
         df_aba = df_aba[df_aba['Quantidade'].astype(str).str.isdigit() == True]
         df_aba = df_aba.drop_duplicates(subset=['Regiao', 'Tipo_Crime', 'Mes', 'Ano'], keep='first')
 
+        # Salva a aba limpa no arquivo CSV final. Se for a primeira vez, cria o cabeçalho.
         escrever_header = not os.path.exists(caminho_csv_final)
         df_aba.to_csv(caminho_csv_final, mode='a', index=False, sep=';', encoding='utf-8-sig', header=escrever_header)
         total_linhas_geral += len(df_aba)
@@ -110,8 +139,9 @@ print("-" * 50)
 print("FASE 2: PAINEL DE ANÁLISE INTERATIVA")
 print("-" * 50)
 
-# 1. Leitura e Preparação
+# 1. Leitura e Preparação: Abre o arquivo limpo (CSV) que acabamos de criar na Fase 1
 df = pd.read_csv(caminho_csv_final, sep=';')
+# Garante que os números são reconhecidos como números matemáticos pelo Python
 df['Quantidade'] = pd.to_numeric(df['Quantidade'], errors='coerce')
 df['Ano'] = pd.to_numeric(df['Ano'], errors='coerce')
 df['Tipo_Crime'] = df['Tipo_Crime'].str.strip()
@@ -119,6 +149,7 @@ df['Tipo_Crime'] = df['Tipo_Crime'].str.strip()
 # ==============================================================================
 # MENU 1: ESCOLHA DO CRIME
 # ==============================================================================
+# Pega todos os nomes únicos de crimes que existem na base e cria um menu para o usuário escolher
 crimes_disponiveis = sorted(df['Tipo_Crime'].unique().tolist())
 
 print("\nSelecione o Crime que deseja analisar:")
@@ -145,6 +176,7 @@ escolha_calc = input("\nDigite o NÚMERO da análise (1, 2, 3 ou 4): ")
 # ==============================================================================
 # PROCESSAMENTO DOS DADOS ESCOLHIDOS
 # ==============================================================================
+# Filtra a base gigante APENAS para o crime e a região que o usuário escolheu
 df_alvo = df[(df['Tipo_Crime'] == crime_alvo) & (df['Regiao'] == regiao_alva)].copy()
 
 if df_alvo.empty:
@@ -152,37 +184,45 @@ if df_alvo.empty:
 else:
     print(f"\n-> Iniciando cálculos para: {crime_alvo}...")
 
+    # ==========================================
     # 1. GERAR HISTOGRAMA
+    # Objetivo: Ver quais quantidades de crimes são mais comuns (frequentes) nos meses.
+    # ==========================================
     if escolha_calc in ['1', '4']:
         print("-> Gerando Histograma de Distribuição de Frequência...")
-        plt.figure(figsize=(10, 5))
-        sns.histplot(df_alvo['Quantidade'], bins=15, kde=True, color='#8E44AD')
+        plt.figure(figsize=(10, 5)) # Tamanho do gráfico
+        sns.histplot(df_alvo['Quantidade'], bins=15, kde=True, color='#8E44AD') # O Seaborn faz o desenho
 
         plt.title(f'Distribuição de Frequência Mensal - {crime_alvo}')
         plt.xlabel('Quantidade de Crimes em um Mês')
         plt.ylabel('Frequência (Nº de Meses)')
         plt.grid(axis='y', alpha=0.5)
 
-        plt.savefig(caminho_grafico_freq, bbox_inches='tight')
-        plt.close()
+        plt.savefig(caminho_grafico_freq, bbox_inches='tight') # Salva a imagem
+        plt.close() # Fecha a imagem na memória para não sobrecarregar
         print(f"   [OK] Gráfico de frequência salvo como '{os.path.basename(caminho_grafico_freq)}'")
 
+    # ==========================================
     # 2. GERAR REGRESSÃO LINEAR
+    # Objetivo: Calcular se o crime está aumentando ou diminuindo com o passar dos anos.
+    # ==========================================
     if escolha_calc in ['2', '4']:
         print("-> Treinando algoritmo de Regressão Linear Simples...")
+        # Soma a quantidade de crimes agrupando por Ano
         df_ano = df_alvo.groupby('Ano')['Quantidade'].sum().reset_index()
 
-        X = df_ano[['Ano']].values
-        y = df_ano['Quantidade'].values
+        X = df_ano[['Ano']].values # A variável independente (o tempo)
+        y = df_ano['Quantidade'].values # A variável dependente (a quantidade de crimes)
 
+        # Treina o modelo matemático (Sklearn) para criar a reta mais perfeita que se adapta aos pontos
         modelo = LinearRegression()
         modelo.fit(X, y)
         reta_tendencia = modelo.predict(X)
-        inclinacao = modelo.coef_[0]
+        inclinacao = modelo.coef_[0] # Se for positivo a criminalidade sobe, se negativo ela desce
 
         plt.figure(figsize=(10, 5))
-        plt.scatter(X, y, color='#2980B9', label='Crimes Reais Registrados por Ano', s=100)
-        plt.plot(X, reta_tendencia, color='#C0392B', linewidth=3, label='Reta de Tendência (Regressão)')
+        plt.scatter(X, y, color='#2980B9', label='Crimes Reais Registrados por Ano', s=100) # Desenha as bolinhas dos anos
+        plt.plot(X, reta_tendencia, color='#C0392B', linewidth=3, label='Reta de Tendência (Regressão)') # Desenha a reta matemática
 
         plt.title(f'Regressão Linear: Evolução de {crime_alvo} ao longo dos Anos')
         plt.xlabel('Ano')
@@ -195,30 +235,34 @@ else:
         plt.close()
         print(f"   [OK] Gráfico de regressão salvo como '{os.path.basename(caminho_grafico_reg)}'")
 
+    # ==========================================
     # 3. GERAR OUTLIERS
+    # Objetivo: Encontrar anomalias (meses que tiveram crimes demais ou de menos fora do padrão).
+    # ==========================================
     if escolha_calc in ['3', '4']:
         print("-> Identificando Outliers (Anomalias Matemáticas)...")
         media = df_alvo['Quantidade'].mean()
-        dp = df_alvo['Quantidade'].std()
+        dp = df_alvo['Quantidade'].std() # O Desvio Padrão mede o quanto os dados variam ao redor da média
         
         # Define os limites mais sensíveis (Média +- 1.5 Desvios Padrões)
+        # Tudo que passar disso é considerado uma "anomalia matemática" (Outlier)
         limite_sup = media + (1.5 * dp)
         limite_inf = media - (1.5 * dp)
         
-        # Filtra quem está fora dos limites
+        # Filtra na tabela quem está estourando os limites pra cima ou pra baixo
         outliers = df_alvo[(df_alvo['Quantidade'] > limite_sup) | (df_alvo['Quantidade'] < limite_inf)].copy()
         
         plt.figure(figsize=(12, 6))
         
-        # Plota dados normais
+        # Desenha em cinza os meses considerados "normais"
         normais = df_alvo[~df_alvo.index.isin(outliers.index)]
         plt.scatter(range(len(normais)), normais['Quantidade'], color='#95A5A6', label='Meses Normais', alpha=0.6)
         
-        # Plota outliers
+        # Desenha em vermelho os meses que foram classificados como anomalias
         indices_outliers = [df_alvo.index.get_loc(idx) for idx in outliers.index]
         plt.scatter(indices_outliers, outliers['Quantidade'], color='#E74C3C', label='Outliers (Discrepantes)', s=100, zorder=5)
 
-        # Plota as linhas de limite e média
+        # Desenha as linhas horizontais que marcam o piso (limite inferior), o teto (limite superior) e a média
         plt.axhline(media, color='#27AE60', linestyle='-', linewidth=2, label='Média Histórica')
         plt.axhline(limite_sup, color='#C0392B', linestyle='--', label='Limite Superior (Teto)')
         plt.axhline(limite_inf, color='#C0392B', linestyle='--', label='Limite Inferior (Piso)')
@@ -226,7 +270,7 @@ else:
         plt.title(f'Detecção de Outliers Mensais - {crime_alvo}')
         plt.xlabel('Sequência de Meses Analisados')
         plt.ylabel('Quantidade de Ocorrências')
-        plt.xticks([]) # Oculta os números do eixo X para não poluir
+        plt.xticks([]) # Oculta os números do eixo X para não poluir o visual do gráfico
         plt.legend(loc='upper right')
         plt.grid(True, linestyle=':', alpha=0.5)
 
@@ -235,8 +279,9 @@ else:
         print(f"   [OK] Gráfico de outliers salvo como '{os.path.basename(caminho_grafico_out)}'")
 
     # ==============================================================================
-    # EXIBIÇÃO DE RESULTADOS TEXTUAIS
+    # EXIBIÇÃO DE RESULTADOS TEXTUAIS NO TERMINAL
     # ==============================================================================
+    # Pega tudo que calculamos e imprime um relatório escrito na tela
     print("\n" + "=" * 50)
     print("📋 RESULTADOS MATEMÁTICOS PARA O TRABALHO:")
     print("=" * 50)
@@ -247,7 +292,7 @@ else:
     print(f"* Desvio Padrão: {df_alvo['Quantidade'].std():.2f} ocorrências.")
     
     if escolha_calc in ['2', '4']:
-        print(f"* Coeficiente Angular da Reta (b): {inclinacao:.2f}")
+        print(f"* Coeficiente Angular da Reta (b): {inclinacao:.2f}") # Explica a direção da regressão
         if inclinacao > 0:
             print("* Conclusão da Regressão: A tendência indica um AUMENTO das ocorrências no tempo.")
         else:
@@ -258,9 +303,10 @@ else:
         print("🚨 RELATÓRIO DE OUTLIERS (Regra de 1.5 DP)")
         print(f"  - Limite de Normalidade: entre {limite_inf:.0f} e {limite_sup:.0f} casos mensais.")
         print(f"  - Total de Outliers Encontrados: {len(outliers)} meses.")
+        
+        # Se houver outliers, ele lista os top 3 meses mais absurdos (mais longe da média)
         if not outliers.empty:
             print("  - Exemplos de Outliers (Top 3 Mais Discrepantes):")
-            # Ordena pela maior distância da média
             outliers['Distancia_Media'] = abs(outliers['Quantidade'] - media)
             top_3 = outliers.sort_values(by='Distancia_Media', ascending=False).head(3)
             for _, row in top_3.iterrows():

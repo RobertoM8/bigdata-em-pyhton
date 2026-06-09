@@ -166,7 +166,7 @@ regiao_alva = "Total MRJ"
 # ==============================================================================
 print(f"\nVocê selecionou: {crime_alvo}")
 print("Qual análise você deseja gerar?")
-print("[1] Distribuição de Frequência (Histograma Roxo)")
+print("[1] Distribuição de Frequência (Histograma e Tabela)")
 print("[2] Regressão Linear Simples (Tendência Azul/Vermelha)")
 print("[3] Detecção de Outliers (Gráfico de Zonas de Dispersão)")
 print("[4] Gerar TODOS os Gráficos Acima")
@@ -185,21 +185,48 @@ else:
     print(f"\n-> Iniciando cálculos para: {crime_alvo}...")
 
     # ==========================================
-    # 1. GERAR HISTOGRAMA
-    # Objetivo: Ver quais quantidades de crimes são mais comuns (frequentes) nos meses.
+    # 1. GERAR HISTOGRAMA E TABELA DE FREQUÊNCIA
+    # Objetivo: Ver quais quantidades de crimes são mais comuns e montar a tabela acadêmica.
     # ==========================================
     if escolha_calc in ['1', '4']:
-        print("-> Gerando Histograma de Distribuição de Frequência...")
-        plt.figure(figsize=(10, 5)) # Tamanho do gráfico
-        sns.histplot(df_alvo['Quantidade'], bins=15, kde=True, color='#8E44AD') # O Seaborn faz o desenho
+        print("\n" + "="*60)
+        print("-> Gerando Histograma e Calculando Tabela de Frequência...")
+        
+        # 1. Cria 6 classes automáticas e extrai as bordas para o gráfico
+        cortes, limites_bins = pd.cut(df_alvo['Quantidade'], bins=6, retbins=True, right=False)
+
+        # 2. Monta a base da tabela
+        tabela = cortes.value_counts().sort_index().reset_index()
+        tabela.columns = ['Intervalo_Original', 'Freq_Absoluta']
+
+        # 3. Frequências Relativa (%) e Acumulada
+        total_casos = tabela['Freq_Absoluta'].sum()
+        tabela['Freq_Relativa(%)'] = (tabela['Freq_Absoluta'] / total_casos) * 100
+        tabela['Freq_Acumulada'] = tabela['Freq_Absoluta'].cumsum()
+
+        # 4. Formatação Acadêmica: ex "500 |--- 600"
+        tabela['Classes (Intervalos)'] = tabela['Intervalo_Original'].apply(lambda x: f"{int(x.left)} |--- {int(x.right)}")
+        tabela['Freq_Relativa(%)'] = tabela['Freq_Relativa(%)'].map("{:.1f}%".format)
+        
+        # Imprime a tabela
+        tabela_final = tabela[['Classes (Intervalos)', 'Freq_Absoluta', 'Freq_Relativa(%)', 'Freq_Acumulada']]
+        
+        print("\n📊 TABELA DE DISTRIBUIÇÃO DE FREQUÊNCIA:")
+        print(tabela_final.to_string(index=False))
+        print("="*60 + "\n")
+
+        # 5. Gera o gráfico contínuo usando os cortes exatos
+        plt.figure(figsize=(10, 5))
+        sns.histplot(df_alvo['Quantidade'], bins=limites_bins, kde=True, color='#8E44AD', edgecolor='black')
 
         plt.title(f'Distribuição de Frequência Mensal - {crime_alvo}')
         plt.xlabel('Quantidade de Crimes em um Mês')
         plt.ylabel('Frequência (Nº de Meses)')
+        plt.xticks(limites_bins.astype(int)) 
         plt.grid(axis='y', alpha=0.5)
 
-        plt.savefig(caminho_grafico_freq, bbox_inches='tight') # Salva a imagem
-        plt.close() # Fecha a imagem na memória para não sobrecarregar
+        plt.savefig(caminho_grafico_freq, bbox_inches='tight')
+        plt.close()
         print(f"   [OK] Gráfico de frequência salvo como '{os.path.basename(caminho_grafico_freq)}'")
 
     # ==========================================
